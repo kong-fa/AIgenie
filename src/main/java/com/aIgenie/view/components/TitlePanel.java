@@ -179,13 +179,10 @@ public class TitlePanel extends JPanel {
         Frame owner = (Frame) SwingUtilities.getWindowAncestor(this);
         SettingsDialog dialog = new SettingsDialog(owner);
         
-        // 设置当前配置（这里使用示例值，实际应从配置系统获取）
-        dialog.setCurrentSettings("浅色", "", "");
-        
         // 添加设置变更监听器
-        dialog.setChangeListener((theme, apiUrl, apiKey, dockingEnabled) -> {
+        dialog.setChangeListener((theme, apiUrl, apiKey, dockingEnabled, model) -> {
             // 处理设置变更
-            System.out.println("设置已更改: 主题=" + theme + ", API URL=" + apiUrl);
+            System.out.println("设置已更改: 主题=" + theme + ", API URL=" + apiUrl + ", 模型=" + model);
             
             // 启用或禁用窗口停靠
             if (parentFrame != null) {
@@ -198,6 +195,19 @@ public class TitlePanel extends JPanel {
                 } catch (Exception ex) {
                     System.err.println("无法设置停靠行为: " + ex.getMessage());
                 }
+            }
+            
+            // 这里可以添加重启应用程序的提示
+            int option = JOptionPane.showConfirmDialog(
+                owner,
+                "配置已保存到文件。某些设置需要重启应用程序才能生效，是否立即重启？",
+                "重启提示",
+                JOptionPane.YES_NO_OPTION
+            );
+            
+            if (option == JOptionPane.YES_OPTION) {
+                // 执行重启操作
+                System.exit(0);  // 在生产环境中，应该实现更优雅的重启机制
             }
         });
         

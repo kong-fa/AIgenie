@@ -1,48 +1,36 @@
-# 服务器配置
 server:
   port: 8080
-
-# Spring配置
 spring:
   main:
     web-application-type: none
-    banner-mode: off
+    banner-mode: false
   application:
     name: AIgenie
-  
-  # Spring AI配置
   ai:
     openai:
-      api-key: 
+      api-key: sk-
       base-url: https://api.siliconflow.cn/v1
       chat:
         options:
-          model: Pro/deepseek-ai/DeepSeek-V3  # 默认使用的模型
-          temperature: 0.7  # 回答的创造性，0为最确定性，1为最创造性
-          max-tokens: 2000  # 每次回复最大令牌数
-    
-
-# 日志配置
+          model: Pro/deepseek-ai/DeepSeek-V3
+          temperature: 0.7
+          max-tokens: 2000
 logging:
   level:
     root: INFO
     com.aIgenie: DEBUG
     org.springframework.ai: DEBUG
     org.springframework.web.client: DEBUG
-  # 配置控制台输出
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-  # 禁用文件输出
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
   file:
     name: ./logs/aigenie.log
-
-# 自定义AI配置
 aigenie:
-  system-prompt: "你是一个有用的AI助手，名为'AIgenie'。请简洁明了地回答用户的问题。"
-  chat-history-limit: 10  # 保存的历史消息数量限制
-  use-custom-client: true  # 启用自定义客户端
-
-# 确保非无头模式
+  system-prompt: 你是一个有用的AI助手，名为'AIgenie'。请简洁明了地回答用户的问题。
+  chat-history-limit: 10
+  use-custom-client: true
+  theme: 浅色
+  docking-enabled: true
 shell:
   interactive:
-    enabled: false 
+    enabled: false
