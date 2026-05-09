@@ -18,9 +18,11 @@ spring:
 logging:
   level:
     root: INFO
-    com.aIgenie: DEBUG
-    org.springframework.ai: DEBUG
-    org.springframework.web.client: DEBUG
+    # 默认 INFO，仅记录消息长度等结构化信息，不会把用户原文写入日志文件。
+    # 调试时可以临时改为 DEBUG，但注意 DEBUG 会把用户输入和请求/响应体打到 logs/aigenie.log。
+    com.aIgenie: INFO
+    org.springframework.ai: INFO
+    org.springframework.web.client: INFO
   pattern:
     console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n'
   file:
@@ -31,6 +33,10 @@ aigenie:
   use-custom-client: true
   theme: 浅色
   docking-enabled: true
+  http:
+    # 自定义客户端的网络超时（秒），避免 API 卡住时输入框永久禁用
+    connect-timeout-seconds: 10
+    read-timeout-seconds: 60
 shell:
   interactive:
     enabled: false

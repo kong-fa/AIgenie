@@ -10,6 +10,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.time.Duration;
+
 @Configuration
 public class AIConfig {
 
@@ -29,9 +31,17 @@ public class AIConfig {
             @Value("${spring.ai.openai.chat.options.temperature:0.7}") double temperature,
             @Value("${spring.ai.openai.chat.options.max-tokens:2000}") int maxTokens,
             @Value("${aigenie.system-prompt:你是一个有用的AI助手，名为'AIgenie'。请简洁明了地回答用户的问题。}") String systemPrompt,
-            @Value("${aigenie.chat-history-limit:10}") int historyLimit) {
+            @Value("${aigenie.chat-history-limit:10}") int historyLimit,
+            // 默认 connect 10s / read 60s，避免 RestTemplate 默认零超时导致的永久挂起。
+            // 流式响应通常较慢，read 超时给到 60s 比较合理。
+            @Value("${aigenie.http.connect-timeout-seconds:10}") long connectTimeoutSeconds,
+            @Value("${aigenie.http.read-timeout-seconds:60}") long readTimeoutSeconds) {
 
         logger.info("创建自定义AI服务Bean (use-custom-client=true)");
-        return new CustomAIServiceImpl(baseUrl, apiKey, model, systemPrompt, historyLimit, temperature, maxTokens);
+        return new CustomAIServiceImpl(
+                baseUrl, apiKey, model, systemPrompt, historyLimit,
+                temperature, maxTokens,
+                Duration.ofSeconds(connectTimeoutSeconds),
+                Duration.ofSeconds(readTimeoutSeconds));
     }
 }

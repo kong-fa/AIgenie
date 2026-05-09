@@ -36,17 +36,33 @@ public class SettingsDialog extends JDialog {
     private SettingsChangeListener changeListener;
     
     private JCheckBox enableDockingCheckbox;
-    
-    // 配置文件路径 - 使用多个可能的路径
-    private static final String[] CONFIG_PATHS = {
-        "src/main/resources/application.yaml",  // IDE开发环境
-        "application.yaml",                     // 运行时目录
-        "./application.yaml",                   // 相对路径
-        "../application.yaml",                  // 上一级目录
-        "config/application.yaml"               // 配置目录
+
+    /**
+     * 配置文件读取优先级，按 Spring Boot 实际外部化配置查找顺序排列：
+     * <ol>
+     *   <li>{@code ./config/application.yaml} —— Spring Boot 推荐的外部配置位置</li>
+     *   <li>{@code ./application.yaml}        —— 与 jar 同目录的覆盖配置</li>
+     *   <li>{@code src/main/resources/application.yaml}
+     *       —— 仅用于 IDE 直接运行的开发场景，对打包后的 jar 不生效</li>
+     * </ol>
+     * 如果以上都不存在，会从 classpath 内的 {@code application.yaml}（即 jar 内的副本）读取。
+     */
+    private static final String[] CONFIG_READ_PATHS = {
+            "./config/application.yaml",
+            "./application.yaml",
+            "src/main/resources/application.yaml"
     };
-    
-    // 当前使用的配置文件路径
+
+    /**
+     * 写入时优先选用已存在的外部配置文件；若都不存在，则在工作目录新建
+     * {@code ./application.yaml}，这是 Spring Boot 启动时会自动加载的位置。
+     */
+    private static final String DEFAULT_WRITE_PATH = "./application.yaml";
+
+    /** classpath 兜底路径，用于在用户从未创建过外部配置时读取默认值。 */
+    private static final String CLASSPATH_FALLBACK_RESOURCE = "/application.yaml";
+
+    /** 当前使用的配置文件路径；为 null 表示来自 classpath（jar 内置）。 */
     private String currentConfigPath;
     
     public SettingsDialog(Frame owner) {
@@ -222,10 +238,10 @@ public class SettingsDialog extends JDialog {
     private Map<String, Object> readYamlConfig() throws IOException {
         Yaml yaml = new Yaml();
 
-        for (String path : CONFIG_PATHS) {
+        for (String path : CONFIG_READ_PATHS) {
             File configFile = new File(path);
             if (configFile.exists() && configFile.isFile()) {
-                logger.debug("找到配置文件: {}", configFile.getAbsolutePath());
+                logger.debug("找到外部配置文件: {}", configFile.getAbsolutePath());
                 currentConfigPath = path;
 
                 try (InputStream in = new FileInputStream(configFile)) {
@@ -243,15 +259,43 @@ public class SettingsDialog extends JDialog {
             }
         }
 
-        logger.warn("未找到任何配置文件，将使用默认路径: {}", CONFIG_PATHS[0]);
-        currentConfigPath = CONFIG_PATHS[0];
+        // classpath 兜底：从 jar 内置的 application.yaml 读默认值。
+        // 此时 currentConfigPath 保持 null，saveSettings() 会写到外部 DEFAULT_WRITE_PATH。
+        try (InputStream in = SettingsDialog.class.getResourceAsStream(CLASSPATH_FALLBACK_RESOURCE)) {
+            if (in != null) {
+                logger.debug("外部配置不存在，回退到 classpath 内的 application.yaml 作为默认值");
+                Object obj = yaml.load(in);
+                if (obj instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> result = (Map<String, Object>) obj;
+                    return result;
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("读取 classpath 配置失败: {}", e.getMessage());
+        }
+
+        logger.warn("未找到任何 application.yaml，使用空白配置");
         return new LinkedHashMap<>();
+    }
+
+    /**
+     * 解析写入路径：优先复用刚才读到的外部文件，否则使用 {@link #DEFAULT_WRITE_PATH}。
+     * 不会写入 {@code src/main/resources/application.yaml}：那只是源代码副本，
+     * 修改它对运行中的 jar 没有任何效果，会让"重启后生效"的承诺落空。
+     */
+    private File resolveWriteTarget() {
+        if (currentConfigPath != null
+                && !"src/main/resources/application.yaml".equals(currentConfigPath)) {
+            return new File(currentConfigPath);
+        }
+        return new File(DEFAULT_WRITE_PATH);
     }
     
     /**
      * 将配置写入YAML文件
      */
-    private void writeYamlConfig(Map<String, Object> config) throws IOException {
+    private File writeYamlConfig(Map<String, Object> config) throws IOException {
         DumperOptions options = new DumperOptions();
         options.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
         options.setPrettyFlow(true);
@@ -259,15 +303,24 @@ public class SettingsDialog extends JDialog {
         options.setIndent(2);
         options.setIndentWithIndicator(true);
         options.setCanonical(false);
-        
+
         Yaml yaml = new Yaml(options);
 
-        File configFile = new File(currentConfigPath);
+        File configFile = resolveWriteTarget();
+        // 自动创建父目录（例如选用 ./config/application.yaml 时）
+        File parent = configFile.getAbsoluteFile().getParentFile();
+        if (parent != null && !parent.exists()) {
+            //noinspection ResultOfMethodCallIgnored
+            parent.mkdirs();
+        }
         logger.info("写入配置到: {}", configFile.getAbsolutePath());
 
         try (Writer writer = new FileWriter(configFile)) {
             yaml.dump(config, writer);
         }
+        // 写入成功后同步 currentConfigPath，下次保存继续写到同一个外部文件
+        currentConfigPath = configFile.getPath();
+        return configFile;
     }
     
     /**
@@ -304,16 +357,20 @@ public class SettingsDialog extends JDialog {
             aigenieConfig.put("theme", theme);
             aigenieConfig.put("docking-enabled", dockingEnabled);
             
-            // 写入配置文件
-            writeYamlConfig(config);
-            
+            // 写入配置文件并拿到实际写入位置（用于在确认对话框中告知用户）
+            File savedTo = writeYamlConfig(config);
+
             // 通知监听器
             if (changeListener != null) {
                 changeListener.onSettingsChanged(theme, apiUrl, apiKey, dockingEnabled, model);
             }
-            
-            // 显示确认消息
-            JOptionPane.showMessageDialog(this, "设置已保存并更新配置文件");
+
+            // 显示确认消息：明确写入路径，方便用户在重启后确认 Spring Boot 会加载该文件
+            JOptionPane.showMessageDialog(this,
+                    "设置已保存到:\n" + savedTo.getAbsolutePath()
+                            + "\n\n下次启动 AIgenie 时该配置会自动生效。",
+                    "保存成功",
+                    JOptionPane.INFORMATION_MESSAGE);
             dispose();
             
         } catch (Exception e) {
