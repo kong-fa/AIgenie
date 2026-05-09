@@ -133,4 +133,13 @@ public class ChatWindow extends JFrame {
             logger.error("完成流式消息时出错", e);
         }
     }
+
+    /**
+     * 启用/禁用消息输入。AI 响应期间应禁用以防止并发请求。
+     */
+    public void setInputEnabled(boolean enabled) {
+        if (inputPanel != null) {
+            inputPanel.setInputEnabled(enabled);
+        }
+    }
 }
