@@ -8,16 +8,19 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.client.ResponseExtractor;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -41,6 +44,8 @@ public class CustomAIServiceImpl implements AIService {
     private final String model;
     private final double temperature;
     private final int maxTokens;
+    private final Duration connectTimeout;
+    private final Duration readTimeout;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
@@ -61,7 +66,9 @@ public class CustomAIServiceImpl implements AIService {
                                String systemPrompt,
                                int historyLimit,
                                double temperature,
-                               int maxTokens) {
+                               int maxTokens,
+                               Duration connectTimeout,
+                               Duration readTimeout) {
         this.apiUrl = baseUrl + "/chat/completions";
         this.apiKey = apiKey;
         this.model = model;
@@ -69,12 +76,27 @@ public class CustomAIServiceImpl implements AIService {
         this.maxHistoryGroups = historyLimit;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
-        this.restTemplate = new RestTemplate();
+        this.connectTimeout = connectTimeout;
+        this.readTimeout = readTimeout;
+        this.restTemplate = buildRestTemplate(connectTimeout, readTimeout);
         this.objectMapper = new ObjectMapper();
 
-        logger.info("初始化自定义AI客户端，使用模型: {}, temperature={}, max_tokens={}",
-                model, temperature, maxTokens);
+        logger.info("初始化自定义AI客户端，模型={}, temperature={}, max_tokens={}, connectTimeout={}s, readTimeout={}s",
+                model, temperature, maxTokens, connectTimeout.toSeconds(), readTimeout.toSeconds());
         logger.info("API URL: {}", this.apiUrl);
+    }
+
+    /**
+     * 构造带超时的 RestTemplate。RestTemplate 默认无任何超时，网络抖动时会无限期阻塞，
+     * 进而导致控制器一直处于 in-flight 状态、UI 输入永远禁用。
+     */
+    private static RestTemplate buildRestTemplate(Duration connectTimeout, Duration readTimeout) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout((int) connectTimeout.toMillis());
+        factory.setReadTimeout((int) readTimeout.toMillis());
+        return new RestTemplateBuilder()
+                .requestFactory(() -> factory)
+                .build();
     }
 
     @Override
