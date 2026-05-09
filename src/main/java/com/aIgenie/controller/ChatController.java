@@ -97,7 +97,9 @@ public class ChatController {
             return;
         }
 
-        logger.info("处理用户消息: {}", content);
+        // 仅记录消息长度，不记录原始内容，避免敏感输入落盘到 logs/aigenie.log
+        logger.info("处理用户消息，长度: {}", content.length());
+        logger.debug("用户消息原文: {}", content);
 
         final ChatMessage userMessage = new ChatMessage("我", content);
         messageHistory.add(userMessage);

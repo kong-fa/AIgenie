@@ -46,7 +46,8 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public synchronized String sendMessage(String message) {
-        logger.debug("开始标准AI调用，消息: {}", message);
+        logger.debug("开始标准AI调用，长度: {}", message == null ? 0 : message.length());
+        logger.trace("标准AI调用原文: {}", message);
 
         UserMessage userMessage = new UserMessage(message);
         messageHistory.add(userMessage);

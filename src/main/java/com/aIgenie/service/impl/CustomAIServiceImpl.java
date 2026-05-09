@@ -107,7 +107,9 @@ public class CustomAIServiceImpl implements AIService {
     @Override
     public CompletableFuture<String> sendMessageAsync(String message) {
         CompletableFuture<String> future = new CompletableFuture<>();
-        logger.debug("异步请求开始: {}", message);
+        // 仅在 trace 级别记录用户原文，避免敏感输入意外落盘
+        logger.debug("异步请求开始，长度: {}", message == null ? 0 : message.length());
+        logger.trace("异步请求原文: {}", message);
 
         CompletableFuture.runAsync(() -> sendMessageStreaming(message,
                 this::notifyStreamListeners,
