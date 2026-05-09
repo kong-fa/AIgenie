@@ -12,7 +12,7 @@ public class ChatMessage {
     
     public ChatMessage(String sender, String content) {
         this.sender = sender;
-        this.content = content;
+        this.content = content == null ? "" : content;
         this.timestamp = new Date();
     }
     
@@ -29,13 +29,16 @@ public class ChatMessage {
     }
     
     public void setContent(String content) {
-        this.content = content;
+        this.content = content == null ? "" : content;
     }
-    
+
     /**
      * 追加内容到消息
      */
     public void appendContent(String chunk) {
+        if (chunk == null || chunk.isEmpty()) {
+            return;
+        }
         this.content += chunk;
     }
     
