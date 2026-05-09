@@ -1,5 +1,8 @@
 package com.aIgenie.view.components;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
@@ -13,6 +16,8 @@ import com.aIgenie.util.DockableWindowBehavior;
  * 自定义标题栏组件
  */
 public class TitlePanel extends JPanel {
+    private static final Logger logger = LoggerFactory.getLogger(TitlePanel.class);
+
     private Point dragStart;
     private JLabel titleLabel;
     private JButton minimizeButton;
@@ -183,39 +188,31 @@ public class TitlePanel extends JPanel {
         
         // 添加设置变更监听器
         dialog.setChangeListener((theme, apiUrl, apiKey, dockingEnabled, model) -> {
-            // 处理设置变更
-            System.out.println("设置已更改: 主题=" + theme + ", API URL=" + apiUrl + ", 模型=" + model);
-            
+            // 这里不要把 apiKey 打到日志里，避免泄露
+            logger.info("设置已更改: 主题={}, API URL={}, 模型={}", theme, apiUrl, model);
+
             // 启用或禁用窗口停靠
             if (parentFrame != null) {
                 try {
-                    DockableWindowBehavior behavior = 
-                        (DockableWindowBehavior) ((JComponent)parentFrame.getContentPane()).getClientProperty("dockBehavior");
+                    DockableWindowBehavior behavior =
+                        (DockableWindowBehavior) ((JComponent) parentFrame.getContentPane())
+                                .getClientProperty("dockBehavior");
                     if (behavior != null) {
                         behavior.setDockingEnabled(dockingEnabled);
                     }
                 } catch (Exception ex) {
-                    System.err.println("无法设置停靠行为: " + ex.getMessage());
+                    logger.warn("无法设置停靠行为: {}", ex.getMessage());
                 }
             }
-            
-            // 这里可以添加重启应用程序的提示
-            int option = JOptionPane.showConfirmDialog(
-                owner,
-                "配置已保存到文件。某些设置需要重启应用程序才能生效，是否立即重启？",
-                "重启提示",
-                JOptionPane.YES_NO_OPTION
+
+            // 不再提供"立即重启"按钮（会被误解为真正的重启，实际只是退出进程）。
+            // 改为单纯告知用户：部分配置需要重启才能生效，请手动重新启动。
+            JOptionPane.showMessageDialog(
+                    owner,
+                    "配置已保存。\n部分设置（如 API URL / API Key / 模型）需要重启应用后才能生效，\n请手动关闭并重新启动 AIgenie。",
+                    "提示",
+                    JOptionPane.INFORMATION_MESSAGE
             );
-            
-            if (option == JOptionPane.YES_OPTION) {
-                // 实际并非真正"重启"，而是优雅退出，由用户重新启动；
-                // 后续可在此处接入自动重启脚本。
-                if (parentFrame != null) {
-                    parentFrame.dispatchEvent(new WindowEvent(parentFrame, WindowEvent.WINDOW_CLOSING));
-                } else {
-                    System.exit(0);
-                }
-            }
         });
         
         // 显示对话框

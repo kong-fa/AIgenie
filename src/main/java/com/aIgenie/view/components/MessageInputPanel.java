@@ -54,6 +54,10 @@ public class MessageInputPanel extends JPanel {
     }
     
     private void sendMessage() {
+        if (!sendButton.isEnabled()) {
+            // 上一条 AI 响应仍在进行中，禁止再发新消息
+            return;
+        }
         if (onSendListener == null) {
             logger.warn("没有设置消息发送监听器");
             return;
@@ -66,6 +70,16 @@ public class MessageInputPanel extends JPanel {
         logger.debug("用户输入了消息: {}", message);
         onSendListener.accept(message);
         messageField.setText("");
+    }
+
+    /**
+     * 启用或禁用消息输入。
+     * AI 响应进行中应禁用，避免出现并发请求导致流式回复交错、对话历史错乱。
+     */
+    public void setInputEnabled(boolean enabled) {
+        messageField.setEnabled(enabled);
+        sendButton.setEnabled(enabled);
+        sendButton.setText(enabled ? "发送" : "等待中...");
     }
     
     public void setOnSendListener(Consumer<String> listener) {

@@ -35,12 +35,12 @@ public class CustomAIServiceImpl implements AIService {
 
     private static final String SSE_DATA_PREFIX = "data: ";
     private static final String SSE_DONE = "[DONE]";
-    private static final double DEFAULT_TEMPERATURE = 0.7;
-    private static final int DEFAULT_MAX_TOKENS = 2000;
 
     private final String apiUrl;
     private final String apiKey;
     private final String model;
+    private final double temperature;
+    private final int maxTokens;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
@@ -59,16 +59,21 @@ public class CustomAIServiceImpl implements AIService {
                                String apiKey,
                                String model,
                                String systemPrompt,
-                               int historyLimit) {
+                               int historyLimit,
+                               double temperature,
+                               int maxTokens) {
         this.apiUrl = baseUrl + "/chat/completions";
         this.apiKey = apiKey;
         this.model = model;
         this.systemPrompt = systemPrompt;
         this.maxHistoryGroups = historyLimit;
+        this.temperature = temperature;
+        this.maxTokens = maxTokens;
         this.restTemplate = new RestTemplate();
         this.objectMapper = new ObjectMapper();
 
-        logger.info("初始化自定义AI客户端，使用模型: {}", model);
+        logger.info("初始化自定义AI客户端，使用模型: {}, temperature={}, max_tokens={}",
+                model, temperature, maxTokens);
         logger.info("API URL: {}", this.apiUrl);
     }
 
@@ -262,8 +267,8 @@ public class CustomAIServiceImpl implements AIService {
     private String buildRequestJson(boolean stream) throws Exception {
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", model);
-        requestBody.put("temperature", DEFAULT_TEMPERATURE);
-        requestBody.put("max_tokens", DEFAULT_MAX_TOKENS);
+        requestBody.put("temperature", temperature);
+        requestBody.put("max_tokens", maxTokens);
         requestBody.put("stream", stream);
 
         ArrayNode messagesNode = requestBody.putArray("messages");

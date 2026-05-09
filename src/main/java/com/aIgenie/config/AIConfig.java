@@ -26,10 +26,12 @@ public class AIConfig {
             @Value("${spring.ai.openai.base-url}") String baseUrl,
             @Value("${spring.ai.openai.api-key}") String apiKey,
             @Value("${spring.ai.openai.chat.options.model}") String model,
+            @Value("${spring.ai.openai.chat.options.temperature:0.7}") double temperature,
+            @Value("${spring.ai.openai.chat.options.max-tokens:2000}") int maxTokens,
             @Value("${aigenie.system-prompt:你是一个有用的AI助手，名为'AIgenie'。请简洁明了地回答用户的问题。}") String systemPrompt,
             @Value("${aigenie.chat-history-limit:10}") int historyLimit) {
 
         logger.info("创建自定义AI服务Bean (use-custom-client=true)");
-        return new CustomAIServiceImpl(baseUrl, apiKey, model, systemPrompt, historyLimit);
+        return new CustomAIServiceImpl(baseUrl, apiKey, model, systemPrompt, historyLimit, temperature, maxTokens);
     }
 }
