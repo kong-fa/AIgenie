@@ -10,38 +10,34 @@
   <name>aIgenie</name>
   <url>http://maven.apache.org</url>
 
-  <!-- 添加Spring Boot父依赖以管理版本 -->
+  <!-- Spring Boot 3.5.x：当前 3.x 主线最新稳定版 -->
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.2.2</version>
+    <version>3.5.14</version>
   </parent>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <java.version>17</java.version>
-    <spring-ai.version>0.8.1</spring-ai.version>
+    <!-- Java 21 LTS -->
+    <java.version>21</java.version>
+    <!-- Spring AI 1.0 GA：artifact 已重命名为 spring-ai-starter-model-openai -->
+    <spring-ai.version>1.0.0</spring-ai.version>
   </properties>
 
-  <!-- 添加Spring仓库，确保能找到Spring AI -->
-  <repositories>
-    <repository>
-      <id>spring-milestones</id>
-      <name>Spring Milestones</name>
-      <url>https://repo.spring.io/milestone</url>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </repository>
-    <repository>
-      <id>spring-snapshots</id>
-      <name>Spring Snapshots</name>
-      <url>https://repo.spring.io/snapshot</url>
-      <releases>
-        <enabled>false</enabled>
-      </releases>
-    </repository>
-  </repositories>
+  <!-- Spring AI 1.0 GA 已发布到 Maven Central，无需再配置 milestone / snapshot 仓库 -->
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.ai</groupId>
+        <artifactId>spring-ai-bom</artifactId>
+        <version>${spring-ai.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
 
   <dependencies>
     <!-- Spring Boot 基础依赖 -->
@@ -79,11 +75,10 @@
       <artifactId>snakeyaml</artifactId>
     </dependency>
 
-    <!-- Spring AI 依赖 -->
+    <!-- Spring AI 1.0 GA OpenAI 兼容客户端 starter -->
     <dependency>
       <groupId>org.springframework.ai</groupId>
-      <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-      <version>${spring-ai.version}</version>
+      <artifactId>spring-ai-starter-model-openai</artifactId>
     </dependency>
 
     <!-- 用于配置属性绑定 -->
@@ -100,7 +95,7 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
-  
+
   <build>
     <plugins>
       <plugin>
