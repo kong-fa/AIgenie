@@ -44,13 +44,6 @@
   </repositories>
 
   <dependencies>
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>3.8.1</version>
-      <scope>test</scope>
-    </dependency>
-    
     <!-- Spring Boot 基础依赖 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -67,19 +60,44 @@
         </exclusion>
       </exclusions>
     </dependency>
-    
+
+    <!-- 显式声明 RestTemplate 所需依赖（不再依赖 starter-web） -->
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-web</artifactId>
+    </dependency>
+
+    <!-- 显式声明 Jackson，CustomAIServiceImpl 使用其 ObjectMapper / JsonNode -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+
+    <!-- 显式声明 SnakeYAML，SettingsDialog 用于读写 application.yaml -->
+    <dependency>
+      <groupId>org.yaml</groupId>
+      <artifactId>snakeyaml</artifactId>
+    </dependency>
+
     <!-- Spring AI 依赖 -->
     <dependency>
       <groupId>org.springframework.ai</groupId>
       <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
       <version>${spring-ai.version}</version>
     </dependency>
-    
+
     <!-- 用于配置属性绑定 -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-configuration-processor</artifactId>
       <optional>true</optional>
+    </dependency>
+
+    <!-- 测试依赖 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
   

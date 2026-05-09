@@ -1,12 +1,18 @@
 package com.aIgenie.view.dialogs;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.io.*;
-import java.nio.file.*;
-import java.util.*;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Writer;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.DumperOptions;
 
@@ -15,6 +21,8 @@ import org.yaml.snakeyaml.DumperOptions;
  * 负责展示和处理应用设置，并直接更新application.yaml文件
  */
 public class SettingsDialog extends JDialog {
+    private static final Logger logger = LoggerFactory.getLogger(SettingsDialog.class);
+
     private JComboBox<String> themeSelector;
     private JTextField apiUrlField;
     private JTextField apiKeyField;
@@ -125,17 +133,14 @@ public class SettingsDialog extends JDialog {
      */
     private void loadCurrentSettings() {
         try {
-            // 尝试读取配置
             Map<String, Object> config = readYamlConfig();
             if (config == null || config.isEmpty()) {
-                System.err.println("警告: 读取到的配置为空！");
+                logger.warn("读取到的配置为空");
                 return;
             }
-            
-            System.out.println("成功读取配置文件: " + currentConfigPath);
-            System.out.println("配置内容: " + config);
-            
-            // 设置API URL和Key
+
+            logger.debug("成功读取配置文件: {}", currentConfigPath);
+
             Map<String, Object> springConfig = getNestedMap(config, "spring");
             if (springConfig != null) {
                 Map<String, Object> aiConfig = getNestedMap(springConfig, "ai");
@@ -144,57 +149,44 @@ public class SettingsDialog extends JDialog {
                     if (openAiConfig != null) {
                         String apiUrl = (String) openAiConfig.get("base-url");
                         String apiKey = (String) openAiConfig.get("api-key");
-                        
-                        System.out.println("读取到的API URL: " + apiUrl);
-                        System.out.println("读取到的API Key: " + apiKey);
-                        
-                        // 设置UI元素
+
                         if (apiUrl != null) apiUrlField.setText(apiUrl);
                         if (apiKey != null) apiKeyField.setText(apiKey);
-                        
-                        // 获取模型
+
                         Map<String, Object> chatConfig = getNestedMap(openAiConfig, "chat");
                         if (chatConfig != null) {
                             Map<String, Object> optionsConfig = getNestedMap(chatConfig, "options");
                             if (optionsConfig != null) {
                                 String model = (String) optionsConfig.get("model");
-                                System.out.println("读取到的模型: " + model);
                                 if (model != null) modelField.setText(model);
                             }
                         }
                     }
                 }
             }
-            
-            // 读取主题和停靠设置
+
             Map<String, Object> aigenieConfig = getNestedMap(config, "aigenie");
             if (aigenieConfig != null) {
                 String theme = (String) aigenieConfig.get("theme");
                 Object dockingEnabled = aigenieConfig.get("docking-enabled");
-                
-                System.out.println("读取到的主题: " + theme);
-                System.out.println("读取到的停靠设置: " + dockingEnabled);
-                
-                // 设置主题
+
                 if ("深色".equals(theme)) {
                     themeSelector.setSelectedIndex(1);
                 } else {
                     themeSelector.setSelectedIndex(0);
                 }
-                
-                // 设置停靠
+
                 if (dockingEnabled instanceof Boolean) {
                     enableDockingCheckbox.setSelected((Boolean) dockingEnabled);
                 }
             }
-            
+
         } catch (Exception e) {
-            System.err.println("加载配置时出错: " + e.getMessage());
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, 
-                "无法加载配置文件: " + e.getMessage(), 
-                "配置错误", 
-                JOptionPane.ERROR_MESSAGE);
+            logger.error("加载配置时出错", e);
+            JOptionPane.showMessageDialog(this,
+                    "无法加载配置文件: " + e.getMessage(),
+                    "配置错误",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
     
@@ -229,14 +221,13 @@ public class SettingsDialog extends JDialog {
      */
     private Map<String, Object> readYamlConfig() throws IOException {
         Yaml yaml = new Yaml();
-        
-        // 尝试所有可能的路径
+
         for (String path : CONFIG_PATHS) {
             File configFile = new File(path);
             if (configFile.exists() && configFile.isFile()) {
-                System.out.println("找到配置文件: " + configFile.getAbsolutePath());
+                logger.debug("找到配置文件: {}", configFile.getAbsolutePath());
                 currentConfigPath = path;
-                
+
                 try (InputStream in = new FileInputStream(configFile)) {
                     Object obj = yaml.load(in);
                     if (obj instanceof Map) {
@@ -244,15 +235,15 @@ public class SettingsDialog extends JDialog {
                         Map<String, Object> result = (Map<String, Object>) obj;
                         return result;
                     } else {
-                        System.err.println("配置文件内容不是Map: " + obj);
+                        logger.warn("配置文件内容不是 Map: {}", obj);
                     }
                 } catch (Exception e) {
-                    System.err.println("读取配置文件 " + path + " 出错: " + e.getMessage());
+                    logger.warn("读取配置文件 {} 出错: {}", path, e.getMessage());
                 }
             }
         }
-        
-        System.err.println("未找到任何配置文件，将使用默认路径: " + CONFIG_PATHS[0]);
+
+        logger.warn("未找到任何配置文件，将使用默认路径: {}", CONFIG_PATHS[0]);
         currentConfigPath = CONFIG_PATHS[0];
         return new LinkedHashMap<>();
     }
@@ -270,11 +261,10 @@ public class SettingsDialog extends JDialog {
         options.setCanonical(false);
         
         Yaml yaml = new Yaml(options);
-        
-        // 使用当前配置路径
+
         File configFile = new File(currentConfigPath);
-        System.out.println("写入配置到: " + configFile.getAbsolutePath());
-        
+        logger.info("写入配置到: {}", configFile.getAbsolutePath());
+
         try (Writer writer = new FileWriter(configFile)) {
             yaml.dump(config, writer);
         }
@@ -327,12 +317,11 @@ public class SettingsDialog extends JDialog {
             dispose();
             
         } catch (Exception e) {
-            System.err.println("保存设置时出错: " + e.getMessage());
-            e.printStackTrace();
-            JOptionPane.showMessageDialog(this, 
-                "保存配置时出错: " + e.getMessage(), 
-                "保存错误", 
-                JOptionPane.ERROR_MESSAGE);
+            logger.error("保存设置时出错", e);
+            JOptionPane.showMessageDialog(this,
+                    "保存配置时出错: " + e.getMessage(),
+                    "保存错误",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
     

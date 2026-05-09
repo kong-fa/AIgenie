@@ -1,5 +1,8 @@
 package com.aIgenie.view.components;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
@@ -10,6 +13,8 @@ import java.util.function.Consumer;
  * 消息输入面板
  */
 public class MessageInputPanel extends JPanel {
+    private static final Logger logger = LoggerFactory.getLogger(MessageInputPanel.class);
+
     private JTextField messageField;
     private JButton sendButton;
     private Consumer<String> onSendListener;
@@ -49,18 +54,18 @@ public class MessageInputPanel extends JPanel {
     }
     
     private void sendMessage() {
-        if (onSendListener != null) {
-            String message = messageField.getText().trim();
-            if (!message.isEmpty()) {
-                System.out.println("用户输入了消息: " + message);
-                onSendListener.accept(message);
-                messageField.setText("");
-            } else {
-                System.out.println("用户尝试发送空消息，已忽略");
-            }
-        } else {
-            System.out.println("警告: 没有设置消息发送监听器");
+        if (onSendListener == null) {
+            logger.warn("没有设置消息发送监听器");
+            return;
         }
+        String message = messageField.getText().trim();
+        if (message.isEmpty()) {
+            logger.debug("用户尝试发送空消息，已忽略");
+            return;
+        }
+        logger.debug("用户输入了消息: {}", message);
+        onSendListener.accept(message);
+        messageField.setText("");
     }
     
     public void setOnSendListener(Consumer<String> listener) {

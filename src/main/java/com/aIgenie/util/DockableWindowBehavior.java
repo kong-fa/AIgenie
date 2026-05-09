@@ -1,6 +1,9 @@
 package com.aIgenie.util;
 
 import com.aIgenie.view.components.TitlePanel;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -10,6 +13,8 @@ import java.awt.event.*;
  * 允许窗口停靠在屏幕边缘并自动收缩
  */
 public class DockableWindowBehavior {
+    private static final Logger logger = LoggerFactory.getLogger(DockableWindowBehavior.class);
+
     private JFrame window;
     private TitlePanel titlePanel;
     
@@ -128,7 +133,7 @@ public class DockableWindowBehavior {
                 }
             } catch (Exception ex) {
                 // 处理可能的异常，如鼠标信息不可用
-                System.err.println("检查鼠标位置时出错: " + ex.getMessage());
+                logger.warn("检查鼠标位置时出错: {}", ex.getMessage());
                 isProcessingAction = false;
             }
         });

@@ -2,14 +2,10 @@ package com.aIgenie.view.components;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
-import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
-import java.io.IOException;
+import java.awt.event.WindowEvent;
 import com.aIgenie.view.dialogs.SettingsDialog;
 import com.aIgenie.util.DockableWindowBehavior;
 
@@ -116,7 +112,13 @@ public class TitlePanel extends JPanel {
         closeButton.setForeground(textColor);
         closeButton.setFont(new Font("Dialog", Font.BOLD, 18));
         closeButton.setToolTipText("关闭");
-        closeButton.addActionListener(e -> System.exit(0));
+        closeButton.addActionListener(e -> {
+            // 优雅关闭：派发 WINDOW_CLOSING 事件，让 JFrame 根据
+            // setDefaultCloseOperation 自行决定关闭行为，方便后续做资源清理。
+            if (parentFrame != null) {
+                parentFrame.dispatchEvent(new WindowEvent(parentFrame, WindowEvent.WINDOW_CLOSING));
+            }
+        });
         closeButton.addMouseListener(createButtonHoverEffect(closeButton, new Color(255, 95, 87)));
         rightPanel.add(closeButton);
         
@@ -206,8 +208,13 @@ public class TitlePanel extends JPanel {
             );
             
             if (option == JOptionPane.YES_OPTION) {
-                // 执行重启操作
-                System.exit(0);  // 在生产环境中，应该实现更优雅的重启机制
+                // 实际并非真正"重启"，而是优雅退出，由用户重新启动；
+                // 后续可在此处接入自动重启脚本。
+                if (parentFrame != null) {
+                    parentFrame.dispatchEvent(new WindowEvent(parentFrame, WindowEvent.WINDOW_CLOSING));
+                } else {
+                    System.exit(0);
+                }
             }
         });
         
