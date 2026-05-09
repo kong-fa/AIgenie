@@ -8,46 +8,58 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.web.client.ResponseExtractor;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
-@Service
-@ConditionalOnProperty(name = "aigenie.use-custom-client", havingValue = "true")
+/**
+ * 基于 RestTemplate 的自定义 OpenAI 兼容 AI 服务实现。
+ * 该类不再通过 {@code @Service} 自动扫描创建，而是由 {@link com.aIgenie.config.AIConfig}
+ * 根据 {@code aigenie.use-custom-client} 开关有条件地注册为 Spring Bean，
+ * 避免与 {@link AIServiceImpl} 同时存在导致的 Bean 冲突。
+ */
 public class CustomAIServiceImpl implements AIService {
     private static final Logger logger = LoggerFactory.getLogger(CustomAIServiceImpl.class);
-    
+
+    private static final String SSE_DATA_PREFIX = "data: ";
+    private static final String SSE_DONE = "[DONE]";
+    private static final double DEFAULT_TEMPERATURE = 0.7;
+    private static final int DEFAULT_MAX_TOKENS = 2000;
+
     private final String apiUrl;
     private final String apiKey;
     private final String model;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+
+    /** 持有对话上下文，所有访问需要在 {@code historyLock} 同步块中进行。 */
     private final List<ObjectNode> messageHistory = new ArrayList<>();
+    private final Object historyLock = new Object();
+
     private final String systemPrompt;
     private final int maxHistoryGroups;
-    private List<RequestResponseListener> listeners = new ArrayList<>();
-    private List<Consumer<String>> streamListeners = new ArrayList<>();
-    
-    public CustomAIServiceImpl(
-            @Value("${spring.ai.openai.base-url}") String baseUrl,
-            @Value("${spring.ai.openai.api-key}") String apiKey,
-            @Value("${spring.ai.openai.chat.options.model}") String model,
-            @Value("${aigenie.system-prompt:你是一个有用的AI助手，名为'AIgenie'。请简洁明了地回答用户的问题。}") String systemPrompt,
-            @Value("${aigenie.chat-history-limit:10}") int historyLimit) {
+
+    /** 监听器集合使用 CopyOnWriteArrayList 保证多线程下迭代时的安全性。 */
+    private final List<RequestResponseListener> listeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<String>> streamListeners = new CopyOnWriteArrayList<>();
+
+    public CustomAIServiceImpl(String baseUrl,
+                               String apiKey,
+                               String model,
+                               String systemPrompt,
+                               int historyLimit) {
         this.apiUrl = baseUrl + "/chat/completions";
         this.apiKey = apiKey;
         this.model = model;
@@ -55,126 +67,48 @@ public class CustomAIServiceImpl implements AIService {
         this.maxHistoryGroups = historyLimit;
         this.restTemplate = new RestTemplate();
         this.objectMapper = new ObjectMapper();
-        
-        System.out.println("初始化自定义AI客户端");
-        System.out.println("模型: " + model);
-        System.out.println("API URL: " + this.apiUrl);
-        System.out.println("系统提示: " + this.systemPrompt);
-        
+
         logger.info("初始化自定义AI客户端，使用模型: {}", model);
         logger.info("API URL: {}", this.apiUrl);
     }
-    
+
     @Override
     public String sendMessage(String message) {
+        ObjectNode userMessage = createMessageNode("user", message);
+        appendToHistory(userMessage);
+
         try {
-            System.out.println("\n====== 开始调用AI接口 ======");
-            System.out.println("发送消息到AI: " + message);
-            
-            // 添加用户消息到历史
-            ObjectNode userMessage = objectMapper.createObjectNode();
-            userMessage.put("role", "user");
-            userMessage.put("content", message);
-            messageHistory.add(userMessage);
-            
-            // 限制历史消息数量
-            while (messageHistory.size() > maxHistoryGroups * 2) {
-                messageHistory.remove(0);
-            }
-            
-            // 准备请求体
-            ObjectNode requestBody = objectMapper.createObjectNode();
-            requestBody.put("model", model);
-            requestBody.put("temperature", 0.7);
-            requestBody.put("max_tokens", 2000);
-            requestBody.put("stream", false); // 不使用流式响应
-            
-            // 添加消息数组，首先是系统消息，然后是历史消息
-            ArrayNode messagesNode = requestBody.putArray("messages");
-            
-            // 添加系统提示消息
-            ObjectNode systemMessage = objectMapper.createObjectNode();
-            systemMessage.put("role", "system");
-            systemMessage.put("content", systemPrompt);
-            messagesNode.add(systemMessage);
-            
-            // 添加历史消息
-            for (ObjectNode msg : messageHistory) {
-                messagesNode.add(msg);
-            }
-            
-            // 设置请求头
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
-            
-            // 创建请求实体
-            HttpEntity<String> request = new HttpEntity<>(objectMapper.writeValueAsString(requestBody), headers);
-            
-            // 在发送HTTP请求前
-            String requestJson = objectMapper.writeValueAsString(requestBody);
-            System.out.println("发送请求到: " + apiUrl);
-            System.out.println("请求体: " + requestJson);
-            
-            // 发送请求
-            System.out.println("正在等待AI响应...");
+            String requestJson = buildRequestJson(false);
+            HttpEntity<String> request = new HttpEntity<>(requestJson, buildHeaders());
+
+            logger.debug("发送非流式请求到 {}", apiUrl);
             String responseBody = restTemplate.postForObject(apiUrl, request, String.class);
-            
-            // 请求后
-            System.out.println("收到响应");
-            System.out.println("响应体: " + responseBody);
-            
-            // 解析响应
+            logger.debug("收到响应，长度: {}", responseBody == null ? 0 : responseBody.length());
+
             JsonNode responseJson = objectMapper.readTree(responseBody);
             String content = responseJson.path("choices").path(0).path("message").path("content").asText();
-            
-            // 添加AI回复到历史
-            ObjectNode assistantMessage = objectMapper.createObjectNode();
-            assistantMessage.put("role", "assistant");
-            assistantMessage.put("content", content);
-            messageHistory.add(assistantMessage);
-            
-            // 解析后
-            System.out.println("解析后的AI回复: " + content);
-            System.out.println("====== AI调用结束 ======\n");
-            
+
+            appendToHistory(createMessageNode("assistant", content));
             notifyListeners(requestJson, responseBody);
-            
             return content;
         } catch (Exception e) {
-            System.err.println("====== AI调用出错 ======");
-            System.err.println("错误消息: " + e.getMessage());
-            e.printStackTrace(System.err);
-            System.err.println("=======================\n");
+            // 调用失败时回滚用户消息，保持对话上下文一致
+            removeFromHistory(userMessage);
+            logger.error("AI调用出错", e);
             return "抱歉，我遇到了一个问题: " + e.getMessage();
         }
     }
-    
+
     @Override
     public CompletableFuture<String> sendMessageAsync(String message) {
         CompletableFuture<String> future = new CompletableFuture<>();
-        
-        System.out.println("异步请求开始: " + message);
-        
-        // 在新线程中执行
-        CompletableFuture.runAsync(() -> {
-            try {
-                // 使用流式响应
-                sendMessageStreaming(message, 
-                    // 流式更新回调
-                    chunk -> notifyStreamListeners(chunk),
-                    // 完成回调
-                    result -> future.complete(result),
-                    // 错误回调
-                    error -> future.completeExceptionally(error)
-                );
-            } catch (Exception e) {
-                future.completeExceptionally(e);
-                System.err.println("发送消息时出错: " + e.getMessage());
-                e.printStackTrace();
-            }
-        });
-        
+        logger.debug("异步请求开始: {}", message);
+
+        CompletableFuture.runAsync(() -> sendMessageStreaming(message,
+                this::notifyStreamListeners,
+                future::complete,
+                future::completeExceptionally));
+
         return future;
     }
 
@@ -182,9 +116,17 @@ public class CustomAIServiceImpl implements AIService {
         listeners.add(listener);
     }
 
+    public void removeRequestResponseListener(RequestResponseListener listener) {
+        listeners.remove(listener);
+    }
+
     private void notifyListeners(String request, String response) {
         for (RequestResponseListener listener : listeners) {
-            listener.onRequestResponse(request, response);
+            try {
+                listener.onRequestResponse(request, response);
+            } catch (Exception e) {
+                logger.warn("通知请求/响应监听器时出错", e);
+            }
         }
     }
 
@@ -194,159 +136,145 @@ public class CustomAIServiceImpl implements AIService {
     public void addStreamListener(Consumer<String> listener) {
         streamListeners.add(listener);
     }
-    
+
     /**
      * 移除流式响应监听器
      */
     public void removeStreamListener(Consumer<String> listener) {
         streamListeners.remove(listener);
     }
-    
-    /**
-     * 通知流式响应监听器
-     */
+
     private void notifyStreamListeners(String chunk) {
         for (Consumer<String> listener : streamListeners) {
-            listener.accept(chunk);
+            try {
+                listener.accept(chunk);
+            } catch (Exception e) {
+                logger.warn("通知流式监听器时出错", e);
+            }
         }
     }
-    
+
     /**
-     * 发送支持流式响应的消息
+     * 发送支持流式响应的消息。
+     * 错误处理保证 onComplete / onError 二者只会被调用一次，避免重复回调污染 future。
      */
-    private void sendMessageStreaming(
-            String message, 
-            Consumer<String> onChunk, 
-            Consumer<String> onComplete,
-            Consumer<Throwable> onError) {
-        
+    private void sendMessageStreaming(String message,
+                                      Consumer<String> onChunk,
+                                      Consumer<String> onComplete,
+                                      Consumer<Throwable> onError) {
+        ObjectNode userMessage = createMessageNode("user", message);
+        appendToHistory(userMessage);
+
         try {
-            System.out.println("\n====== 开始调用AI接口(流式) ======");
-            System.out.println("发送消息到AI: " + message);
-            
-            // 添加用户消息到历史
-            ObjectNode userMessage = objectMapper.createObjectNode();
-            userMessage.put("role", "user");
-            userMessage.put("content", message);
-            messageHistory.add(userMessage);
-            
-            // 限制历史消息数量
-            while (messageHistory.size() > maxHistoryGroups * 2) {
-                messageHistory.remove(0);
-            }
-            
-            // 准备请求体
-            ObjectNode requestBody = objectMapper.createObjectNode();
-            requestBody.put("model", model);
-            requestBody.put("temperature", 0.7);
-            requestBody.put("max_tokens", 2000);
-            requestBody.put("stream", true); // 启用流式响应!
-            
-            // 添加消息数组，首先是系统消息，然后是历史消息
-            ArrayNode messagesNode = requestBody.putArray("messages");
-            
-            // 添加系统提示消息
-            ObjectNode systemMessage = objectMapper.createObjectNode();
-            systemMessage.put("role", "system");
-            systemMessage.put("content", systemPrompt);
-            messagesNode.add(systemMessage);
-            
-            // 添加历史消息
-            for (ObjectNode msg : messageHistory) {
-                messagesNode.add(msg);
-            }
-            
-            // 设置请求头
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
-            
-            // 创建请求实体
-            HttpEntity<String> request = new HttpEntity<>(objectMapper.writeValueAsString(requestBody), headers);
-            
-            // 在发送HTTP请求前
-            String requestJson = objectMapper.writeValueAsString(requestBody);
-            System.out.println("发送请求到: " + apiUrl);
-            System.out.println("请求体: " + requestJson);
-            
-            // 发送流式请求并处理响应
-            System.out.println("启动流式响应处理...");
-            
+            String requestJson = buildRequestJson(true);
+            HttpHeaders headers = buildHeaders();
+            byte[] requestBytes = requestJson.getBytes(StandardCharsets.UTF_8);
+
+            logger.debug("启动流式请求到 {}", apiUrl);
+
             final StringBuilder fullResponse = new StringBuilder();
-            final StringBuilder currentContent = new StringBuilder();
-            
-            // 使用ResponseExtractor处理流式响应
-            restTemplate.execute(apiUrl, org.springframework.http.HttpMethod.POST, 
-                req -> {
-                    req.getHeaders().putAll(headers);
-                    req.getBody().write(objectMapper.writeValueAsString(requestBody).getBytes());
-                },
-                (ResponseExtractor<Void>) response -> {
-                    try (BufferedReader reader = new BufferedReader(new InputStreamReader(response.getBody()))) {
-                        String line;
-                        while ((line = reader.readLine()) != null) {
-                            if (line.isEmpty()) continue;
-                            
-                            if (line.startsWith("data: ")) {
-                                String data = line.substring(6);
-                                
-                                if ("[DONE]".equals(data)) {
-                                    System.out.println("流式传输完成");
+
+            restTemplate.execute(apiUrl, HttpMethod.POST,
+                    req -> {
+                        req.getHeaders().putAll(headers);
+                        req.getBody().write(requestBytes);
+                    },
+                    (ResponseExtractor<Void>) response -> {
+                        try (BufferedReader reader = new BufferedReader(
+                                new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (line.isEmpty()) continue;
+                                if (!line.startsWith(SSE_DATA_PREFIX)) continue;
+
+                                String data = line.substring(SSE_DATA_PREFIX.length());
+                                if (SSE_DONE.equals(data)) {
+                                    logger.debug("流式传输完成");
                                     continue;
                                 }
-                                
+
                                 try {
                                     JsonNode chunk = objectMapper.readTree(data);
                                     JsonNode choices = chunk.path("choices");
-                                    
                                     if (choices.isArray() && choices.size() > 0) {
                                         JsonNode delta = choices.get(0).path("delta");
                                         JsonNode contentNode = delta.path("content");
-                                        
                                         if (!contentNode.isMissingNode()) {
                                             String content = contentNode.asText();
-                                            currentContent.append(content);
                                             fullResponse.append(content);
-                                            
-                                            // 通知监听器有新的内容块
                                             onChunk.accept(content);
                                         }
                                     }
-                                } catch (Exception e) {
-                                    System.err.println("解析流式数据出错: " + e.getMessage());
+                                } catch (Exception parseEx) {
+                                    // 单条 SSE 解析失败时，仅记录日志，不中断整个流式响应
+                                    logger.warn("解析流式数据出错: {}", parseEx.getMessage());
                                 }
                             }
                         }
-                    } catch (Exception e) {
-                        System.err.println("处理流式响应时出错: " + e.getMessage());
-                        onError.accept(e);
-                    }
-                    return null;
-                }
-            );
-            
-            // 流式处理完成，获取完整响应
+                        return null;
+                    });
+
             String finalResponse = fullResponse.toString();
-            System.out.println("完整响应: " + finalResponse);
-            
-            // 添加AI回复到历史
-            ObjectNode assistantMessage = objectMapper.createObjectNode();
-            assistantMessage.put("role", "assistant");
-            assistantMessage.put("content", finalResponse);
-            messageHistory.add(assistantMessage);
-            
-            System.out.println("====== AI调用结束(流式) ======\n");
-            
-            // 调用完成回调
+            logger.debug("流式响应完成，总长度: {}", finalResponse.length());
+
+            appendToHistory(createMessageNode("assistant", finalResponse));
             onComplete.accept(finalResponse);
-            
-        } catch (Exception e) {
-            System.err.println("====== AI调用出错(流式) ======");
-            System.err.println("错误消息: " + e.getMessage());
-            e.printStackTrace(System.err);
-            System.err.println("=======================\n");
-            
-            onError.accept(e);
+        } catch (Throwable t) {
+            // 失败时回滚用户消息，避免对话上下文污染
+            removeFromHistory(userMessage);
+            logger.error("流式AI调用出错", t);
+            onError.accept(t);
         }
     }
-} 
+
+    private ObjectNode createMessageNode(String role, String content) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("role", role);
+        node.put("content", content == null ? "" : content);
+        return node;
+    }
+
+    private void appendToHistory(ObjectNode message) {
+        synchronized (historyLock) {
+            messageHistory.add(message);
+            while (messageHistory.size() > maxHistoryGroups * 2) {
+                messageHistory.remove(0);
+            }
+        }
+    }
+
+    private void removeFromHistory(ObjectNode message) {
+        synchronized (historyLock) {
+            messageHistory.remove(message);
+        }
+    }
+
+    private HttpHeaders buildHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(apiKey);
+        return headers;
+    }
+
+    /**
+     * 构造带历史上下文的请求 JSON 字符串。
+     */
+    private String buildRequestJson(boolean stream) throws Exception {
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.put("model", model);
+        requestBody.put("temperature", DEFAULT_TEMPERATURE);
+        requestBody.put("max_tokens", DEFAULT_MAX_TOKENS);
+        requestBody.put("stream", stream);
+
+        ArrayNode messagesNode = requestBody.putArray("messages");
+        messagesNode.add(createMessageNode("system", systemPrompt));
+
+        synchronized (historyLock) {
+            for (ObjectNode msg : messageHistory) {
+                messagesNode.add(msg);
+            }
+        }
+
+        return objectMapper.writeValueAsString(requestBody);
+    }
+}
